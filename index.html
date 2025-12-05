@@ -1,1 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Diplomacy Map Editor</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      box-sizing: border-box;
+    }
+
+    *, *::before, *::after {
+      box-sizing: inherit;
+    }
+
+    #app {
+      display: flex;
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+    }
+
+    #sidebar {
+      width: 280px;
+      background: #1f2933;
+      color: #e5e7eb;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #sidebar h1 {
+      font-size: 18px;
+      margin: 0 0 4px 0;
+    }
+
+    #sidebar p {
+      font-size: 12px;
+      line-height: 1.4;
+      margin: 0 0 6px 0;
+      color: #cbd2d9;
+    }
+
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+
+    button {
+      border: none;
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      background: #4b5563;
+      color: #f9fafb;
+      transition: background 0.15s, transform 0.05s;
+    }
+
+    button:hover {
+      background: #6b7280;
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    button.active {
+      background: #10b981;
+      color: #022c22;
+    }
+
+    button.secondary {
+      background: #374151;
+    }
+
+    button.secondary:hover {
+      background: #4b5563;
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-top: 4px;
+      margin-bottom: 2px;
+      color: #e5e7eb;
+    }
+
+    .info-box {
+      background: #111827;
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 12px;
+      color: #e5e7eb;
+      min-height: 40px;
+    }
+
+    .info-row {
+      margin-bottom: 2px;
+    }
+
+    .info-label {
+      font-weight: 600;
+      color: #9ca3af;
+    }
+
+    #exportArea {
+      width: 100%;
+      flex: 1;
+      resize: none;
+      border-radius: 4px;
+      border: 1px solid #374151;
+      padding: 6px;
+      font-size: 11px;
+      background: #020617;
+      color: #e5e7eb;
+      font-family: "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    #canvasWrapper {
+      flex: 1;
+      background: #0b1020 radial-gradient(circle at top left, #1f2937, #020617);
+      position: relative;
+    }
+
+    #mapCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: crosshair;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 2px;
+    }
+
+    .warning {
+      font-size: 11px;
+      color: #fbbf24;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <h1>Diplomacy Map Editor</h1>
+    <p>
+      Draw territories, define supply centers, and connect adjacent territories.
+      Use the JSON box to save or reload your map.
+    </p>
+
+    <div class="section-title">Modes</div>
+    <div class="btn-group">
+      <button id="modeDrawBtn">Add territory</button>
+      <button id="modeSelectBtn" class="active">Select / inspect</button>
+      <button id="modeConnectBtn">Add connection</button>
+    </div>
+
+    <div class="btn-group">
+      <button id="finishTerritoryBtn" class="secondary">Finish territory</button>
+      <button id="cancelTerritoryBtn" class="secondary">Cancel draw</button>
+    </div>
+
+    <div class="btn-group">
+      <button id="toggleSupplyBtn" class="secondary">Toggle supply center</button>
+      <button id="renameTerritoryBtn" class="secondary">Rename territory</button>
+    </div>
+
+    <div class="section-title">Selected territory</div>
+    <div class="info-box" id="infoBox">
+      <div class="info-row"><span class="info-label">Name:</span> <span id="infoName">None</span></div>
+      <div class="info-row"><span class="info-label">Supply center:</span> <span id="infoSupply">No</span></div>
+      <div class="info-row"><span class="info-label">Neighbors:</span> <span id="infoNeighbors">0</span></div>
+      <div class="info-row"><span class="info-label">ID:</span> <span id="infoId">N/A</span></div>
+    </div>
+
+    <div class="hint" id="modeHint">
+      Click inside a territory to select it.
+    </div>
+
+    <div class="section-title">Export / import JSON</div>
+    <div class="btn-group">
+      <button id="exportBtn" class="secondary">Export map</button>
+      <button id="importBtn" class="secondary">Import map</button>
+      <button id="clearBtn" class="secondary">Clear map</button>
+    </div>
+    <textarea id="exportArea" placeholder="Map JSON will appear here after export. Paste JSON and click Import to reload."></textarea>
+    <div class="warning">
+      Data is kept in memory only. Export to JSON if you care about saving your work.
+    </div>
+  </div>
+
+  <div id="canvasWrapper">
+    <canvas id="mapCanvas"></canvas>
+  </div>
+</div>
+
+<script>
+  // Basic state
+  const canvas = document.getElementById("mapCanvas");
+  const ctx = canvas.getContext("2d");
+
+  const sidebar = document.getElementById("sidebar");
+  let territories = [];
+  let currentMode = "select"; // "draw", "select", "connect"
+  let currentDrawPoints = [];
+  let selectedTerritoryId = null;
+  let connectFirstTerritoryId = null;
+
+  // UI elements
+  const modeDrawBtn = document.getElementById("modeDrawBtn");
+  const modeSelectBtn = document.getElementById("modeSelectBtn");
+  const modeConnectBtn = document.getElementById("modeConnectBtn");
+  const finishTerritoryBtn = document.getElementById("finishTerritoryBtn");
+  const cancelTerritoryBtn = document.getElementById("cancelTerritoryBtn");
+  const toggleSupplyBtn = document.getElementById("toggleSupplyBtn");
+  const renameTerritoryBtn = document.getElementById("renameTerritoryBtn");
+
+  const infoName = document.getElementById("infoName");
+  const infoSupply = document.getElementById("infoSupply");
+  const infoNeighbors = document.getElementById("infoNeighbors");
+  const infoId = document.getElementById("infoId");
+
+  const modeHint = document.getElementById("modeHint");
+
+  const exportBtn = document.getElementById("exportBtn");
+  const importBtn = document.getElementById("importBtn");
+  const clearBtn = document.getElementById("clearBtn");
+  const exportArea = document.getElementById("exportArea");
+
+  // Resize canvas to fill available area
+  function resizeCanvas() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    draw();
+  }
+
+  window.addEventListener("resize", resizeCanvas);
+  resizeCanvas();
+
+  // Utility to generate a pastel color
+  function randomColor() {
+    const hue = Math.floor(Math.random() * 360);
+    return `hsl(${hue}, 60%, 65%)`;
+  }
+
+  // Compute centroid of polygon
+  function polygonCentroid(points) {
+    let x = 0, y = 0;
+    for (const p of points) {
+      x += p.x;
+      y += p.y;
+    }
+    const n = points.length || 1;
+    return { x: x / n, y: y / n };
+  }
+
+  // Point in polygon, ray casting
+  function pointInPolygon(point, polygon) {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i].x, yi = polygon[i].y;
+      const xj = polygon[j].x, yj = polygon[j].y;
+
+      const intersect =
+        ((yi > point.y) !== (yj > point.y)) &&
+        (point.x < (xj - xi) * (point.y - yi) / (yj - yi + 0.000001) + xi);
+
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  // Find territory id at a point
+  function findTerritoryAtPoint(point) {
+    // Draw order gives later territories priority
+    for (let i = territories.length - 1; i >= 0; i--) {
+      const t = territories[i];
+      if (pointInPolygon(point, t.vertices)) {
+        return t.id;
+      }
+    }
+    return null;
+  }
+
+  function getTerritoryById(id) {
+    return territories.find(t => t.id === id) || null;
+  }
+
+  // Drawing routine
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Optional background grid
+    const gridSize = 40;
+    ctx.save();
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.15)";
+    ctx.lineWidth = 1;
+    for (let x = 0; x < canvas.width; x += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(x + 0.5, 0);
+      ctx.lineTo(x + 0.5, canvas.height);
+      ctx.stroke();
+    }
+    for (let y = 0; y < canvas.height; y += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(0, y + 0.5);
+      ctx.lineTo(canvas.width, y + 0.5);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Draw connections first (behind polygons)
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(15, 118, 110, 0.9)";
+    for (const t of territories) {
+      const c1 = polygonCentroid(t.vertices);
+      for (const neighborId of t.neighbors) {
+        if (neighborId <= t.id) continue; // avoid duplicate line
+        const neighbor = getTerritoryById(neighborId);
+        if (!neighbor) continue;
+        const c2 = polygonCentroid(neighbor.vertices);
+        ctx.beginPath();
+        ctx.moveTo(c1.x, c1.y);
+        ctx.lineTo(c2.x, c2.y);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // Draw territories
+    for (const t of territories) {
+      ctx.beginPath();
+      const verts = t.vertices;
+      if (verts.length > 0) {
+        ctx.moveTo(verts[0].x, verts[0].y);
+        for (let i = 1; i < verts.length; i++) {
+          ctx.lineTo(verts[i].x, verts[i].y);
+        }
+        ctx.closePath();
+      }
+
+      ctx.fillStyle = t.color;
+      ctx.globalAlpha = t.id === selectedTerritoryId ? 0.9 : 0.75;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      ctx.lineWidth = t.id === selectedTerritoryId ? 3 : 1.5;
+      ctx.strokeStyle = t.id === selectedTerritoryId ? "#f97316" : "#0f172a";
+      ctx.stroke();
+
+      // Draw name label
+      const center = polygonCentroid(verts);
+      ctx.fillStyle = "#020617";
+      ctx.font = "11px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(t.name || `T${t.id}`, center.x, center.y);
+
+      // Draw supply center marker
+      if (t.isSupplyCenter) {
+        ctx.beginPath();
+        const r = 8;
+        ctx.arc(center.x, center.y - 14, r, 0, Math.PI * 2);
+        ctx.fillStyle = "#fef9c3";
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#f59e0b";
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(center.x, center.y - 14 - r + 3);
+        ctx.lineTo(center.x - 3, center.y - 14 + r - 3);
+        ctx.lineTo(center.x + 3, center.y - 14 + r - 3);
+        ctx.closePath();
+        ctx.fillStyle = "#b45309";
+        ctx.fill();
+      }
+    }
+
+    // Draw current polygon in draw mode
+    if (currentMode === "draw" && currentDrawPoints.length > 0) {
+      ctx.save();
+      ctx.beginPath();
+      const pts = currentDrawPoints;
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i].x, pts[i].y);
+      }
+
+      ctx.strokeStyle = "#3b82f6";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.stroke();
+
+      // Show points
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#bfdbfe";
+      for (const p of pts) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    // If in connect mode and first territory chosen, highlight it
+    if (currentMode === "connect" && connectFirstTerritoryId != null) {
+      const t = getTerritoryById(connectFirstTerritoryId);
+      if (t) {
+        ctx.save();
+        ctx.beginPath();
+        const verts = t.vertices;
+        if (verts.length > 0) {
+          ctx.moveTo(verts[0].x, verts[0].y);
+          for (let i = 1; i < verts.length; i++) {
+            ctx.lineTo(verts[i].x, verts[i].y);
+          }
+          ctx.closePath();
+        }
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#22c55e";
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
+  // Mode switching
+  function setMode(mode) {
+    currentMode = mode;
+    modeDrawBtn.classList.toggle("active", mode === "draw");
+    modeSelectBtn.classList.toggle("active", mode === "select");
+    modeConnectBtn.classList.toggle("active", mode === "connect");
+
+    if (mode === "draw") {
+      modeHint.textContent = "Click on the canvas to add vertices. Use Finish territory when done.";
+      connectFirstTerritoryId = null;
+    } else if (mode === "select") {
+      modeHint.textContent = "Click inside a territory to select it.";
+      connectFirstTerritoryId = null;
+    } else if (mode === "connect") {
+      modeHint.textContent = "Click first territory, then second, to create a connection.";
+      connectFirstTerritoryId = null;
+    }
+
+    draw();
+  }
+
+  modeDrawBtn.addEventListener("click", () => {
+    setMode("draw");
+  });
+
+  modeSelectBtn.addEventListener("click", () => {
+    setMode("select");
+  });
+
+  modeConnectBtn.addEventListener("click", () => {
+    setMode("connect");
+  });
+
+  // Canvas click handling
+  canvas.addEventListener("click", (evt) => {
+    const rect = canvas.getBoundingClientRect();
+    const point = {
+      x: evt.clientX - rect.left,
+      y: evt.clientY - rect.top
+    };
+
+    if (currentMode === "draw") {
+      currentDrawPoints.push(point);
+      draw();
+      return;
+    }
+
+    const tid = findTerritoryAtPoint(point);
+
+    if (currentMode === "select") {
+      selectedTerritoryId = tid;
+      updateInfoBox();
+      draw();
+    } else if (currentMode === "connect") {
+      if (tid == null) return;
+      if (connectFirstTerritoryId == null) {
+        connectFirstTerritoryId = tid;
+      } else {
+        if (connectFirstTerritoryId !== tid) {
+          addConnection(connectFirstTerritoryId, tid);
+        }
+        connectFirstTerritoryId = null;
+      }
+      draw();
+    }
+  });
+
+  // Add connection between two territories
+  function addConnection(id1, id2) {
+    const t1 = getTerritoryById(id1);
+    const t2 = getTerritoryById(id2);
+    if (!t1 || !t2) return;
+
+    if (!t1.neighbors.includes(id2)) t1.neighbors.push(id2);
+    if (!t2.neighbors.includes(id1)) t2.neighbors.push(id1);
+  }
+
+  // Finish territory drawing
+  finishTerritoryBtn.addEventListener("click", () => {
+    if (currentDrawPoints.length < 3) {
+      alert("You need at least three points to form a territory.");
+      return;
+    }
+
+    const name = prompt("Territory name:", `Territory ${territories.length + 1}`) || "";
+    const id = territories.length > 0 ? Math.max(...territories.map(t => t.id)) + 1 : 1;
+
+    const territory = {
+      id,
+      name: name.trim() || `T${id}`,
+      color: randomColor(),
+      vertices: currentDrawPoints.slice(),
+      isSupplyCenter: false,
+      neighbors: []
+    };
+
+    territories.push(territory);
+    currentDrawPoints = [];
+    selectedTerritoryId = id;
+    updateInfoBox();
+    setMode("select");
+    draw();
+  });
+
+  // Cancel current draw
+  cancelTerritoryBtn.addEventListener("click", () => {
+    currentDrawPoints = [];
+    draw();
+  });
+
+  // Toggle supply center for selected
+  toggleSupplyBtn.addEventListener("click", () => {
+    if (selectedTerritoryId == null) {
+      alert("Select a territory first.");
+      return;
+    }
+    const t = getTerritoryById(selectedTerritoryId);
+    if (!t) return;
+    t.isSupplyCenter = !t.isSupplyCenter;
+    updateInfoBox();
+    draw();
+  });
+
+  // Rename selected territory
+  renameTerritoryBtn.addEventListener("click", () => {
+    if (selectedTerritoryId == null) {
+      alert("Select a territory first.");
+      return;
+    }
+    const t = getTerritoryById(selectedTerritoryId);
+    if (!t) return;
+    const name = prompt("New name for this territory:", t.name);
+    if (name != null && name.trim() !== "") {
+      t.name = name.trim();
+      updateInfoBox();
+      draw();
+    }
+  });
+
+  // Update selected info
+  function updateInfoBox() {
+    if (selectedTerritoryId == null) {
+      infoName.textContent = "None";
+      infoSupply.textContent = "No";
+      infoNeighbors.textContent = "0";
+      infoId.textContent = "N/A";
+      return;
+    }
+    const t = getTerritoryById(selectedTerritoryId);
+    if (!t) {
+      infoName.textContent = "None";
+      infoSupply.textContent = "No";
+      infoNeighbors.textContent = "0";
+      infoId.textContent = "N/A";
+      return;
+    }
+    infoName.textContent = t.name;
+    infoSupply.textContent = t.isSupplyCenter ? "Yes" : "No";
+    infoNeighbors.textContent = t.neighbors.length.toString();
+    infoId.textContent = t.id.toString();
+  }
+
+  // Export map to JSON
+  exportBtn.addEventListener("click", () => {
+    const data = {
+      version: 1,
+      territories: territories.map(t => ({
+        id: t.id,
+        name: t.name,
+        color: t.color,
+        isSupplyCenter: t.isSupplyCenter,
+        neighbors: t.neighbors.slice(),
+        vertices: t.vertices.map(p => ({ x: p.x, y: p.y }))
+      }))
+    };
+    exportArea.value = JSON.stringify(data, null, 2);
+  });
+
+  // Import map from JSON
+  importBtn.addEventListener("click", () => {
+    const text = exportArea.value.trim();
+    if (!text) {
+      alert("Paste JSON into the box before importing.");
+      return;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      alert("Invalid JSON.");
+      return;
+    }
+    if (!parsed.territories || !Array.isArray(parsed.territories)) {
+      alert("JSON does not look like a Diplomacy map export.");
+      return;
+    }
+
+    territories = parsed.territories.map(t => ({
+      id: t.id,
+      name: t.name,
+      color: t.color || randomColor(),
+      isSupplyCenter: !!t.isSupplyCenter,
+      neighbors: Array.isArray(t.neighbors) ? t.neighbors.slice() : [],
+      vertices: (t.vertices || []).map(p => ({ x: p.x, y: p.y }))
+    }));
+
+    selectedTerritoryId = null;
+    connectFirstTerritoryId = null;
+    currentDrawPoints = [];
+    updateInfoBox();
+    draw();
+  });
+
+  // Clear map
+  clearBtn.addEventListener("click", () => {
+    if (!confirm("Clear the entire map? This cannot be undone unless you saved JSON.")) {
+      return;
+    }
+    territories = [];
+    selectedTerritoryId = null;
+    connectFirstTerritoryId = null;
+    currentDrawPoints = [];
+    updateInfoBox();
+    draw();
+  });
+
+  // Initial render
+  draw();
+</script>
+</body>
+</html>
+
 
