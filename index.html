@@ -52,6 +52,7 @@
       flex-wrap: wrap;
       gap: 6px;
       margin-bottom: 4px;
+      align-items: center;
     }
 
     button {
@@ -150,6 +151,12 @@
       margin-top: 4px;
     }
 
+    #bgImageInput {
+      font-size: 11px;
+      color: #e5e7eb;
+      max-width: 100%;
+    }
+
     /* Simple mobile handling: sidebar on top, canvas below */
     @media (max-width: 800px) {
       #app {
@@ -206,6 +213,14 @@
       Click inside a territory to select it.
     </div>
 
+    <div class="section-title">Background map</div>
+    <div class="btn-group">
+      <input id="bgImageInput" type="file" accept="image/*">
+    </div>
+    <div class="hint">
+      Upload a map image and trace territories on top of it.
+    </div>
+
     <div class="section-title">Export / import JSON</div>
     <div class="btn-group">
       <button id="exportBtn" class="secondary">Export map</button>
@@ -233,6 +248,9 @@
   let selectedTerritoryId = null;
   let connectFirstTerritoryId = null;
 
+  // Background image state
+  let backgroundImage = null;
+
   // UI elements
   const modeDrawBtn = document.getElementById("modeDrawBtn");
   const modeSelectBtn = document.getElementById("modeSelectBtn");
@@ -253,6 +271,8 @@
   const importBtn = document.getElementById("importBtn");
   const clearBtn = document.getElementById("clearBtn");
   const exportArea = document.getElementById("exportArea");
+
+  const bgImageInput = document.getElementById("bgImageInput");
 
   function resizeCanvas() {
     const rect = canvas.parentElement.getBoundingClientRect();
@@ -311,6 +331,15 @@
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // Background image first
+    if (backgroundImage) {
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    }
+
+    // Grid on top of background
     const gridSize = 40;
     ctx.save();
     ctx.strokeStyle = "rgba(148, 163, 184, 0.15)";
@@ -329,6 +358,7 @@
     }
     ctx.restore();
 
+    // Connections
     ctx.save();
     ctx.lineWidth = 2;
     ctx.strokeStyle = "rgba(15, 118, 110, 0.9)";
@@ -347,6 +377,7 @@
     }
     ctx.restore();
 
+    // Territories
     for (const t of territories) {
       ctx.beginPath();
       const verts = t.vertices;
@@ -394,6 +425,7 @@
       }
     }
 
+    // In-progress polygon
     if (currentMode === "draw" && currentDrawPoints.length > 0) {
       ctx.save();
       ctx.beginPath();
@@ -419,6 +451,7 @@
       ctx.restore();
     }
 
+    // Highlight first territory when connecting
     if (currentMode === "connect" && connectFirstTerritoryId != null) {
       const t = getTerritoryById(connectFirstTerritoryId);
       if (t) {
@@ -594,6 +627,23 @@
     infoId.textContent = t.id.toString();
   }
 
+  // Background image upload handler
+  bgImageInput.addEventListener("change", (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        backgroundImage = img;
+        draw();
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
   exportBtn.addEventListener("click", () => {
     const data = {
       version: 1,
@@ -604,7 +654,8 @@
         isSupplyCenter: t.isSupplyCenter,
         neighbors: t.neighbors.slice(),
         vertices: t.vertices.map(p => ({ x: p.x, y: p.y }))
-      }))
+      })),
+      background: backgroundImage ? backgroundImage.src : null
     };
     exportArea.value = JSON.stringify(data, null, 2);
   });
@@ -640,7 +691,18 @@
     connectFirstTerritoryId = null;
     currentDrawPoints = [];
     updateInfoBox();
-    draw();
+
+    if (parsed.background) {
+      const img = new Image();
+      img.onload = () => {
+        backgroundImage = img;
+        draw();
+      };
+      img.src = parsed.background;
+    } else {
+      backgroundImage = null;
+      draw();
+    }
   });
 
   clearBtn.addEventListener("click", () => {
@@ -651,6 +713,7 @@
     selectedTerritoryId = null;
     connectFirstTerritoryId = null;
     currentDrawPoints = [];
+    backgroundImage = null;
     updateInfoBox();
     draw();
   });
