@@ -113,6 +113,36 @@
       color: #9ca3af;
     }
 
+    .info-input-group {
+      margin-top: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 11px;
+    }
+
+    .info-input-group label {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .info-input-group span {
+      color: #9ca3af;
+      font-weight: 600;
+    }
+
+    select,
+    input[type="text"] {
+      border-radius: 4px;
+      border: 1px solid #374151;
+      background: #020617;
+      color: #e5e7eb;
+      padding: 4px 6px;
+      font-size: 11px;
+      width: 100%;
+    }
+
     #exportArea {
       width: 100%;
       flex: 1;
@@ -207,6 +237,30 @@
       <div class="info-row"><span class="info-label">Supply center:</span> <span id="infoSupply">No</span></div>
       <div class="info-row"><span class="info-label">Neighbors:</span> <span id="infoNeighbors">0</span></div>
       <div class="info-row"><span class="info-label">ID:</span> <span id="infoId">N/A</span></div>
+      <div class="info-row"><span class="info-label">Type:</span> <span id="infoType">N/A</span></div>
+      <div class="info-row"><span class="info-label">Coast:</span> <span id="infoCoast">None</span></div>
+      <div class="info-row"><span class="info-label">Home power:</span> <span id="infoHomePower">None</span></div>
+
+      <div class="info-input-group">
+        <label for="territoryTypeSelect">
+          <span>Territory type</span>
+          <select id="territoryTypeSelect">
+            <option value="land">Land</option>
+            <option value="sea">Sea</option>
+            <option value="coast">Coast</option>
+          </select>
+        </label>
+
+        <label for="territoryCoastInput">
+          <span>Coast label (optional)</span>
+          <input id="territoryCoastInput" type="text" placeholder="north, south, east, west, etc" />
+        </label>
+
+        <label for="territoryHomePowerInput">
+          <span>Home power (optional)</span>
+          <input id="territoryHomePowerInput" type="text" placeholder="ENG, FRA, GER, etc" />
+        </label>
+      </div>
     </div>
 
     <div class="hint" id="modeHint">
@@ -264,6 +318,9 @@
   const infoSupply = document.getElementById("infoSupply");
   const infoNeighbors = document.getElementById("infoNeighbors");
   const infoId = document.getElementById("infoId");
+  const infoType = document.getElementById("infoType");
+  const infoCoast = document.getElementById("infoCoast");
+  const infoHomePower = document.getElementById("infoHomePower");
 
   const modeHint = document.getElementById("modeHint");
 
@@ -273,6 +330,11 @@
   const exportArea = document.getElementById("exportArea");
 
   const bgImageInput = document.getElementById("bgImageInput");
+
+  // Territory metadata controls
+  const territoryTypeSelect = document.getElementById("territoryTypeSelect");
+  const territoryCoastInput = document.getElementById("territoryCoastInput");
+  const territoryHomePowerInput = document.getElementById("territoryHomePowerInput");
 
   function resizeCanvas() {
     const rect = canvas.parentElement.getBoundingClientRect();
@@ -562,7 +624,10 @@
       color: randomColor(),
       vertices: currentDrawPoints.slice(),
       isSupplyCenter: false,
-      neighbors: []
+      neighbors: [],
+      territoryType: "land",
+      coast: null,
+      homePower: null
     };
 
     territories.push(territory);
@@ -611,6 +676,13 @@
       infoSupply.textContent = "No";
       infoNeighbors.textContent = "0";
       infoId.textContent = "N/A";
+      infoType.textContent = "N/A";
+      infoCoast.textContent = "None";
+      infoHomePower.textContent = "None";
+
+      territoryTypeSelect.value = "land";
+      territoryCoastInput.value = "";
+      territoryHomePowerInput.value = "";
       return;
     }
     const t = getTerritoryById(selectedTerritoryId);
@@ -619,13 +691,64 @@
       infoSupply.textContent = "No";
       infoNeighbors.textContent = "0";
       infoId.textContent = "N/A";
+      infoType.textContent = "N/A";
+      infoCoast.textContent = "None";
+      infoHomePower.textContent = "None";
+
+      territoryTypeSelect.value = "land";
+      territoryCoastInput.value = "";
+      territoryHomePowerInput.value = "";
       return;
     }
+
+    // Ensure defaults exist for older JSON imports
+    if (!t.territoryType) t.territoryType = "land";
+    if (typeof t.coast === "undefined") t.coast = null;
+    if (typeof t.homePower === "undefined") t.homePower = null;
+
     infoName.textContent = t.name;
     infoSupply.textContent = t.isSupplyCenter ? "Yes" : "No";
     infoNeighbors.textContent = t.neighbors.length.toString();
     infoId.textContent = t.id.toString();
+    infoType.textContent = t.territoryType;
+    infoCoast.textContent = t.coast && t.coast.trim() !== "" ? t.coast : "None";
+    infoHomePower.textContent = t.homePower && t.homePower.trim() !== "" ? t.homePower : "None";
+
+    territoryTypeSelect.value = t.territoryType;
+    territoryCoastInput.value = t.coast || "";
+    territoryHomePowerInput.value = t.homePower || "";
   }
+
+  // Metadata controls handlers
+  territoryTypeSelect.addEventListener("change", () => {
+    if (selectedTerritoryId == null) return;
+    const t = getTerritoryById(selectedTerritoryId);
+    if (!t) return;
+    t.territoryType = territoryTypeSelect.value;
+    // Do not auto-clear coast or homePower here so user can keep data if they want
+    updateInfoBox();
+    draw();
+  });
+
+  territoryCoastInput.addEventListener("change", () => {
+    if (selectedTerritoryId == null) return;
+    const t = getTerritoryById(selectedTerritoryId);
+    if (!t) return;
+    const val = territoryCoastInput.value.trim();
+    t.coast = val === "" ? null : val;
+    updateInfoBox();
+    draw();
+  });
+
+  territoryHomePowerInput.addEventListener("change", () => {
+    if (selectedTerritoryId == null) return;
+    const t = getTerritoryById(selectedTerritoryId);
+    if (!t) return;
+    const val = territoryHomePowerInput.value.trim();
+    t.homePower = val === "" ? null : val;
+    updateInfoBox();
+    draw();
+  });
 
   // Background image upload handler
   bgImageInput.addEventListener("change", (event) => {
@@ -653,7 +776,10 @@
         color: t.color,
         isSupplyCenter: t.isSupplyCenter,
         neighbors: t.neighbors.slice(),
-        vertices: t.vertices.map(p => ({ x: p.x, y: p.y }))
+        vertices: t.vertices.map(p => ({ x: p.x, y: p.y })),
+        territoryType: t.territoryType || "land",
+        coast: typeof t.coast === "undefined" ? null : t.coast,
+        homePower: typeof t.homePower === "undefined" ? null : t.homePower
       })),
       background: backgroundImage ? backgroundImage.src : null
     };
@@ -684,7 +810,10 @@
       color: t.color || randomColor(),
       isSupplyCenter: !!t.isSupplyCenter,
       neighbors: Array.isArray(t.neighbors) ? t.neighbors.slice() : [],
-      vertices: (t.vertices || []).map(p => ({ x: p.x, y: p.y }))
+      vertices: (t.vertices || []).map(p => ({ x: p.x, y: p.y })),
+      territoryType: t.territoryType || "land",
+      coast: typeof t.coast === "undefined" ? null : t.coast,
+      homePower: typeof t.homePower === "undefined" ? null : t.homePower
     }));
 
     selectedTerritoryId = null;
